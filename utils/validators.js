@@ -50,6 +50,8 @@ const registerValidation = [
     }),
   
   body('password')
+    .isString().bail()
+    .custom(value => Buffer.byteLength(value, 'utf8') <= 72).withMessage('Password must not exceed 72 UTF-8 bytes')
     .isLength({ min: 8, max: 128 })
     .withMessage('Password must be between 8 and 128 characters')
     .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
@@ -95,6 +97,7 @@ const loginValidation = [
     }),
   
   body('password')
+    .isString().bail().isLength({ max: 128 })
     .notEmpty()
     .withMessage('Password is required'),
   
@@ -106,8 +109,7 @@ const createPostValidation = [
   body('title')
     .trim()
     .isLength({ min: 5, max: 200 })
-    .withMessage('Title must be between 5 and 200 characters')
-    .escape(),
+    .withMessage('Title must be between 5 and 200 characters'),
   
   body('content')
     .trim()
@@ -127,8 +129,7 @@ const updatePostValidation = [
     .optional()
     .trim()
     .isLength({ min: 5, max: 200 })
-    .withMessage('Title must be between 5 and 200 characters')
-    .escape(),
+    .withMessage('Title must be between 5 and 200 characters'),
   
   body('content')
     .optional()
@@ -144,52 +145,31 @@ const updatePostValidation = [
   validateRequest
 ];
 
-// Profile update validation
+// Profile updates accept cleared optional links and app-owned avatar paths.
+const validHttpUrl = (value, domains) => {
+  try {
+    const url = new URL(value);
+    if (!['http:', 'https:'].includes(url.protocol)) return false;
+    return !domains || domains.some(domain => url.hostname === domain || url.hostname.endsWith('.' + domain));
+  } catch { return false; }
+};
+const socialLinkRule = (field, domains) => body(field)
+  .optional().isString().bail().trim().isLength({ max: 500 })
+  .custom(value => value === '' || validHttpUrl(value, domains)).withMessage('Must be a valid HTTP(S) URL for the expected site');
 const updateProfileValidation = [
-  body('bio')
-    .optional()
-    .trim()
-    .isLength({ max: 500 })
-    .withMessage('Bio must not exceed 500 characters'),
-  
-  body('avatar')
-    .optional()
-    .trim()
-    .isURL()
-    .withMessage('Avatar must be a valid URL')
-    .isLength({ max: 500 })
-    .withMessage('Avatar URL must not exceed 500 characters'),
-  
-  body('socialLinks.github')
-    .optional()
-    .trim()
-    .isURL()
-    .withMessage('GitHub URL must be valid')
-    .matches(/github\.com/)
-    .withMessage('Must be a GitHub URL'),
-  
-  body('socialLinks.linkedin')
-    .optional()
-    .trim()
-    .isURL()
-    .withMessage('LinkedIn URL must be valid')
-    .matches(/linkedin\.com/)
-    .withMessage('Must be a LinkedIn URL'),
-  
-  body('socialLinks.twitter')
-    .optional()
-    .trim()
-    .isURL()
-    .withMessage('Twitter URL must be valid')
-    .matches(/(twitter\.com|x\.com)/)
-    .withMessage('Must be a Twitter/X URL'),
-  
-  body('socialLinks.website')
-    .optional()
-    .trim()
-    .isURL()
-    .withMessage('Website must be a valid URL'),
-  
+  body('bio').optional().isString().bail().trim().isLength({ max: 500 }).withMessage('Bio must not exceed 500 characters'),
+  body('avatar').optional().isString().bail().trim().isLength({ max: 500 })
+    .custom(value => {
+      if (value === '' || validHttpUrl(value)) return true;
+      if (value.includes(String.fromCharCode(92)) || /[\u0000-\u001f]/.test(value)) return false;
+      const url = new URL(value, 'https://piqniq.invalid');
+      return value.startsWith('/') && url.origin === 'https://piqniq.invalid' &&
+        /^\/(uploads\/avatars|images)\//i.test(url.pathname);
+    }).withMessage('Avatar must be an HTTP(S) image URL or app avatar path'),
+  socialLinkRule('socialLinks.github', ['github.com']),
+  socialLinkRule('socialLinks.linkedin', ['linkedin.com']),
+  socialLinkRule('socialLinks.twitter', ['twitter.com', 'x.com']),
+  socialLinkRule('socialLinks.website'),
   validateRequest
 ];
 

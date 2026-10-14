@@ -49,6 +49,8 @@ const userSchema = new mongoose.Schema({
     type: Boolean,
     default: false,
   },
+  // Incremented on credential reset/account erasure to revoke existing sessions.
+  sessionVersion: { type: Number, default: 0 },
   emailVerificationToken: String,
   emailVerificationExpires: Date,
   passwordResetToken: String,
@@ -102,9 +104,19 @@ const userSchema = new mongoose.Schema({
   }],
 });
 
+// API serialization never includes credential or verification/reset secrets.
+userSchema.set('toJSON', { transform: (_doc, value) => {
+  delete value.password;
+  delete value.emailVerificationToken;
+  delete value.passwordResetToken;
+  return value;
+} });
+
 // Hash password before saving
 userSchema.pre('save', async function(next) {
   if (!this.isModified('password')) return next();
+  // bcrypt truncates after 72 bytes; reject new raw passwords rather than silently weakening them.
+  if (Buffer.byteLength(this.password, 'utf8') > 72) return next(new Error('Password must not exceed 72 UTF-8 bytes'));
   
   try {
     const salt = await bcrypt.genSalt(10);

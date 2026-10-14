@@ -98,7 +98,7 @@ It includes authentication, profiles, a discussion forum (with curated tags), cu
 ## 📦 Installation
 
 ### Prerequisites
-- Node.js (v14 or higher)
+- Node.js (v22 or higher; validated on v24.11.0)
 - MongoDB (v4.4 or higher)
 - Git
 
@@ -561,7 +561,7 @@ Define badge criteria in User model or create badge-earning logic in `/routes/pr
 
 ## 🧪 Testing
 
-This project includes automated tests via Jest + Supertest.
+This project includes automated tests via Jest + Supertest. Read [isolated validation](Docs/TESTING.md) first: tests require a dedicated disposable MongoDB process, an explicit unique MONGODB_URI_TEST and matching PIQNIQ_TEST_DB_ACK. They refuse an unacknowledged database; do not use personal/shared data.
 
 ```bash
 npm test

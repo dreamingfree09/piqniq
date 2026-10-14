@@ -7,19 +7,23 @@
  * consistent JSON errors while logging a safe amount of diagnostic detail.
  */
 const { Logger } = require('../utils/logger');
+const { safeRequestPath } = require('../utils/privacy');
 
 const errorHandler = (err, req, res, next) => {
   // Log a minimal, privacy-minded error record.
   // Avoid logging query strings (tokens) and raw IPs/user agents.
   Logger.error('Request error', {
     name: err?.name,
-    message: err?.message,
     code: err?.code,
     statusCode: err?.statusCode,
     method: req?.method,
-    path: req?.path,
-    ...(process.env.NODE_ENV === 'development' && err?.stack ? { stack: err.stack } : {}),
+    path: safeRequestPath(req),
   });
+
+  if (res.headersSent) return next(err);
+  if (err.type === 'entity.parse.failed') return res.status(400).json({ error: 'Invalid JSON body' });
+  if (err.type === 'entity.too.large' || err.code === 'LIMIT_FILE_SIZE') return res.status(413).json({ error: 'Request too large' });
+  if (err.name === 'MulterError') return res.status(400).json({ error: 'Invalid upload' });
 
   // Mongoose validation error
   if (err.name === 'ValidationError') {
@@ -66,16 +70,16 @@ const errorHandler = (err, req, res, next) => {
   }
 
   // Default error
-  const statusCode = err.statusCode || 500;
+  const candidate = Number(err.statusCode || err.status);
+  const statusCode = Number.isInteger(candidate) && candidate >= 400 && candidate <= 599 ? candidate : 500;
   res.status(statusCode).json({
-    error: err.message || 'Internal Server Error',
-    ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
+    error: statusCode >= 500 ? 'Internal Server Error' : (err.message || 'Invalid request'),
   });
 };
 
 // 404 handler for undefined routes
 const notFound = (req, res, next) => {
-  const error = new Error(`Not Found - ${req.originalUrl}`);
+  const error = new Error('Not Found');
   error.statusCode = 404;
   next(error);
 };

@@ -17,6 +17,9 @@ const mongoose = require('mongoose');
 const { io } = require('socket.io-client');
 
 const User = require('../models/User');
+const ChatRoom = require('../models/ChatRoom');
+const ChatMessage = require('../models/ChatMessage');
+const { resolveTestMongoUri } = require('../config/testDatabase');
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -72,7 +75,9 @@ function waitForOneOf(socket, events, timeoutMs = 5000) {
 
 async function main() {
   const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
-  const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/piqniq';
+  const mongoUri = resolveTestMongoUri();
+  const origin = new URL(baseUrl);
+  if (!['127.0.0.1', 'localhost'].includes(origin.hostname) || origin.protocol !== 'http:') throw new Error('Smoke server must be loopback HTTP');
 
   console.log('[chat-smoke] baseUrl =', baseUrl);
   console.log('[chat-smoke] mongoUri =', mongoUri.replace(/:\/\/(.*@)/, '://'));
@@ -83,18 +88,29 @@ async function main() {
   const email = `chat-smoke-${nonce}@example.com`;
   const username = `chat_smoke_${nonce}`;
 
+  const password = `pass_${nonce}_123`;
   const user = new User({
     email,
     username,
-    password: `pass_${nonce}_123`,
+    password,
     isEmailVerified: true
   });
   await user.save();
 
   console.log('[chat-smoke] created user', user._id.toString());
 
+  const login = await fetch(baseUrl + '/api/auth/login', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }),
+  });
+  const cookie = login.headers.getSetCookie()[0]?.split(';')[0];
+  if (!login.ok || !cookie) {
+    await User.deleteOne({ _id: user._id });
+    await mongoose.disconnect();
+    throw new Error('Synthetic smoke login failed');
+  }
   const socket = io(`${baseUrl}/chat`, {
     transports: ['websocket'],
+    extraHeaders: { Cookie: cookie },
     reconnection: false
   });
 
@@ -183,6 +199,10 @@ async function main() {
       // ignore
     }
     await sleep(100);
+    const rooms = await ChatRoom.find({ createdBy: user._id }).select('_id');
+    await ChatMessage.deleteMany({ room: { $in: rooms.map(room => room._id) } });
+    await ChatRoom.deleteMany({ createdBy: user._id });
+    await User.deleteOne({ _id: user._id });
     await mongoose.disconnect();
   }
 }

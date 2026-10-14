@@ -178,7 +178,7 @@ router.get('/feed', isAuthenticated, async (req, res) => {
     const Post = require('../models/Post');
 
     const feed = await Post.find({ 
-      author: { $in: user.following } 
+      author: { $in: user.following }, deletedAt: null
     })
       .populate('author', 'username avatar')
       .sort({ createdAt: -1 })

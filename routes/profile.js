@@ -394,6 +394,7 @@ router.delete('/me', isAuthenticated, async (req, res) => {
     user.avatar = '/images/default-avatar.png';
     user.bio = '';
     user.socialLinks = { github: '', linkedin: '', twitter: '', website: '' };
+    user.sessionVersion = Number(user.sessionVersion || 0) + 1;
     user.isEmailVerified = false;
     user.emailVerificationToken = undefined;
     user.emailVerificationExpires = undefined;
@@ -408,6 +409,8 @@ router.delete('/me', isAuthenticated, async (req, res) => {
     user.following = [];
     user.followers = [];
     await user.save();
+
+    global.wsManager?.disconnectUser?.(userId);
 
     // End the session.
     req.session.destroy(() => {
@@ -431,15 +434,15 @@ router.get('/:username', async (req, res) => {
     }
 
     // Get user's posts
-    const posts = await Post.find({ author: user._id })
+    const posts = await Post.find({ author: user._id, deletedAt: null })
       .populate('author', 'username avatar')
       .sort({ createdAt: -1 })
       .limit(20);
 
     // Get stats
-    const totalPosts = await Post.countDocuments({ author: user._id });
+    const totalPosts = await Post.countDocuments({ author: user._id, deletedAt: null });
     const totalLikes = await Post.aggregate([
-      { $match: { author: user._id } },
+      { $match: { author: user._id, deletedAt: null } },
       { $project: { likesCount: { $size: '$likes' } } },
       { $group: { _id: null, total: { $sum: '$likesCount' } } }
     ]);
@@ -479,7 +482,7 @@ router.put('/update', isAuthenticated, updateProfileValidation, async (req, res)
         ...(avatar && { avatar }),
       },
       { new: true, runValidators: true }
-    ).select('-password');
+    ).select('-password -emailVerificationToken -passwordResetToken');
 
     res.json({ user });
   } catch (error) {

@@ -16,6 +16,7 @@ const User = require('../models/User');
 const ChatRoom = require('../models/ChatRoom');
 const ChatMessage = require('../models/ChatMessage');
 
+const inputText = value => typeof value === 'string' ? value.trim() : '';
 const ROOM_NAME_RE = /^[a-zA-Z0-9 _-]{1,50}$/;
 
 function generateInviteCode() {
@@ -127,26 +128,12 @@ module.exports = function initChatNamespace(chatNsp) {
     // Minimal flood control: 1 message / second per socket
     socket._chatLastMessageAt = 0;
 
-    socket.on('chat:authenticate', async (userId) => {
-      try {
-        const user = await User.findById(userId).select('_id username');
-        if (!user) {
-          socket.emit('chat:auth_error', { message: 'Invalid user.' });
-          return;
-        }
-
-        socket.userId = user._id.toString();
-        socket.username = user.username;
-        connectedUsers.set(socket.userId, socket.id);
-
-        socket.emit('chat:authenticated', {
-          userId: socket.userId,
-          username: socket.username
-        });
-      } catch (error) {
-        Logger.error('Chat authentication failed', { error: error?.message });
-        socket.emit('chat:auth_error', { message: 'Authentication failed.' });
+    socket.on('chat:authenticate', (userId) => {
+      if (typeof userId !== 'string' || userId !== socket.userId) {
+        return socket.emit('chat:auth_error', { message: 'Authentication required.' });
       }
+      connectedUsers.set(socket.userId, socket.id);
+      socket.emit('chat:authenticated', { userId: socket.userId, username: socket.username });
     });
 
     socket.on('chat:presence_request', (payload) => {
@@ -155,12 +142,13 @@ module.exports = function initChatNamespace(chatNsp) {
         return;
       }
 
-      const roomId = String(payload?.roomId || socket.currentChatRoomId || '').trim();
+      const roomId = inputText(payload?.roomId || socket.currentChatRoomId);
       if (!isLikelyObjectId(roomId)) {
         socket.emit('chat:error', { message: 'Invalid room.' });
         return;
       }
 
+      if (!socket.rooms.has('chatroom:' + roomId)) return socket.emit('chat:error', { message: 'Join the room first.' });
       socket.emit('chat:presence', presencePayload(roomId));
     });
 
@@ -203,9 +191,9 @@ module.exports = function initChatNamespace(chatNsp) {
         return;
       }
 
-      const name = (payload?.name || '').trim();
+      const name = inputText(payload?.name);
       const isPrivate = !!payload?.isPrivate;
-      const password = (payload?.password || '').trim();
+      const password = inputText(payload?.password);
 
       if (!ROOM_NAME_RE.test(name)) {
         socket.emit('chat:error', {
@@ -214,7 +202,7 @@ module.exports = function initChatNamespace(chatNsp) {
         return;
       }
 
-      if (password && password.length < 4) {
+      if (password && (password.length < 4 || password.length > 128)) {
         socket.emit('chat:error', { message: 'Password must be at least 4 characters.' });
         return;
       }
@@ -268,7 +256,7 @@ module.exports = function initChatNamespace(chatNsp) {
         return;
       }
 
-      const roomId = (payload?.roomId || socket.currentChatRoomId || '').trim();
+      const roomId = inputText(payload?.roomId || socket.currentChatRoomId);
       if (!isLikelyObjectId(roomId)) {
         socket.emit('chat:error', { message: 'Invalid room.' });
         return;
@@ -301,8 +289,8 @@ module.exports = function initChatNamespace(chatNsp) {
         return;
       }
 
-      const identifier = (payload?.identifier || '').trim();
-      const password = (payload?.password || '').trim();
+      const identifier = inputText(payload?.identifier);
+      const password = inputText(payload?.password);
 
       try {
         const room = await resolveRoomByIdentifier(identifier);
@@ -380,7 +368,7 @@ module.exports = function initChatNamespace(chatNsp) {
     });
 
     socket.on('chat:leave_room', async (payload) => {
-      const roomId = (payload?.roomId || '').trim();
+      const roomId = inputText(payload?.roomId);
       if (!roomId) return;
       socket.leave(`chatroom:${roomId}`);
       if (socket.currentChatRoomId === roomId) {
@@ -397,8 +385,8 @@ module.exports = function initChatNamespace(chatNsp) {
         return;
       }
 
-      const roomId = (payload?.roomId || '').trim();
-      const content = (payload?.content || '').trim();
+      const roomId = inputText(payload?.roomId);
+      const content = inputText(payload?.content);
 
       const now = Date.now();
       if (socket._chatLastMessageAt && now - socket._chatLastMessageAt < 1000) {
@@ -412,7 +400,7 @@ module.exports = function initChatNamespace(chatNsp) {
         return;
       }
 
-      if (!content) return;
+      if (!content) return socket.emit('chat:error', { message: 'Message cannot be empty.' });
       if (content.length > 2000) {
         socket.emit('chat:error', { message: 'Message too long.' });
         return;
@@ -473,7 +461,7 @@ module.exports = function initChatNamespace(chatNsp) {
       }
 
       const messageId = String(payload?.messageId || '').trim();
-      const nextContent = String(payload?.content || '').trim();
+      const nextContent = inputText(payload?.content);
 
       if (!isLikelyObjectId(messageId)) {
         socket.emit('chat:error', { message: 'Invalid message.' });
