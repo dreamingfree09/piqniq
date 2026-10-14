@@ -620,3 +620,7 @@ See [FEATURES.md](FEATURES.md) for detailed feature status and future enhancemen
 ---
 
 *Last Updated: January 2026*
+
+## Collaboration workflow
+
+[Continuity](Docs/CONTINUITY.md) records verified revisions and active assignments. [GHP-01](Docs/GHP-01.md) defines exact-revision publication, worker acknowledgement and independent Aether review. [Agent instructions](AGENTS.md) define execution boundaries alongside the existing [Copilot instructions](.github/copilot-instructions.md). Existing product and deployment documentation is preserved; workflow installation does not claim fresh application-test results.
