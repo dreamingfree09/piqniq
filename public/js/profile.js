@@ -845,9 +845,10 @@ class ProfileManager {
   }
 
   escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
+    // This helper is also used in quoted attributes: DOM text serialization alone
+    // does not encode quotation marks and would let legacy values add attributes.
+    const entities = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+    return String(text ?? '').replace(/[&<>"']/g, character => entities[character]);
   }
 
   showError(message) {

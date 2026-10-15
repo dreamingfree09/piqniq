@@ -97,7 +97,9 @@ const loginValidation = [
     }),
   
   body('password')
-    .isString().bail().isLength({ max: 128 })
+    // Login must accept existing/imported hashes; new-password byte limits belong
+    // only to registration/reset. The global request body limit still applies.
+    .isString().bail()
     .notEmpty()
     .withMessage('Password is required'),
   

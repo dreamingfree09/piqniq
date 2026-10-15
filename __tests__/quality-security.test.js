@@ -59,6 +59,19 @@ test('password reset produces a usable password, consumes the token and revokes 
   expect((await a.agent.get('/api/portfolio/me')).status).toBe(401);
   expect((await request(app).post('/api/email/reset-password/quality-reset-token').send({ password: 'Another9876!' })).status).toBe(400);
 });
+test('legacy imported credentials longer than 128 characters remain usable only with a matching hash', async () => {
+  const a = await account();
+  const password = 'LegacyStrong123!' + 'z'.repeat(160);
+  // Bypass new-password save policy only for this synthetic legacy-import fixture.
+  const hash = await require('bcryptjs').hash(password, 10);
+  await User.collection.updateOne({ _id: new mongoose.Types.ObjectId(a.userId) }, { $set: { password: hash } });
+  const agent = request.agent(app);
+  const login = await agent.post('/api/auth/login').send({ email: a.email, password });
+  expect(login.status).toBe(200);
+  expect((await agent.get('/api/auth/me')).body.user._id).toBe(a.userId);
+  expect((await request(app).post('/api/auth/login').send({ email: a.email, password: 'WrongPrefix123!' + 'z'.repeat(160) })).status).toBe(401);
+});
+
 test('login rotates the session ID and invalidates the previous cookie', async () => {
   const a = await account();
   const login = await a.agent.post('/api/auth/login').send({ email: a.email, password: 'Quality1234!' });

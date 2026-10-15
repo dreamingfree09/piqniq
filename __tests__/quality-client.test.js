@@ -2,25 +2,59 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
-const escape = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
-test('public profile renders biography/legacy attributes as text and blocks executable URLs', () => {
-  const mount = { innerHTML: '' };
-  const context = {
-    document: { addEventListener() {}, getElementById: () => mount },
-    window: { location: { origin: 'https://piqniq.invalid' } }, URL, console,
-  };
-  const source = fs.readFileSync(path.join(__dirname, '../public/js/profile.js'), 'utf8');
-  const Profile = vm.runInNewContext(source + '\nProfileManager;', context);
-  const renderer = Object.create(Profile.prototype);
-  renderer.escapeHtml = escape;
-  renderer.renderProfile({
-    user: { username: 'synthetic', avatar: 'javascript:alert(1)', bio: '<img src=x onerror=alert(1)>', createdAt: new Date(), reputation: 0, badges: [], socialLinks: { github: 'javascript:alert(2)' } },
-    stats: { totalPosts: 0, totalLikes: 0 }, posts: [],
+const { JSDOM } = require('jsdom');
+
+/** Parse the actual production HTML/helper with a real DOM; no encoder substitutes. */
+function profileFixture() {
+  const dom = new JSDOM('<div id="profileContainer"></div><div id="dashboardContainer"></div>', {
+    url: 'https://piqniq.invalid/', runScripts: 'outside-only',
   });
-  expect(mount.innerHTML).toContain('&lt;img');
-  expect(mount.innerHTML).not.toContain('src="javascript:');
-  expect(mount.innerHTML).not.toContain('href="javascript:');
-  expect(mount.innerHTML).toContain('/images/default-avatar.png');
+  dom.window.eval(fs.readFileSync(path.join(__dirname, '../public/js/profile.js'), 'utf8') + '\nwindow.TestProfile = ProfileManager;');
+  const renderer = new dom.window.TestProfile();
+  // Exclude asynchronous dashboard API work, not production rendering or encoding.
+  renderer.attachDashboardEventListeners = jest.fn();
+  renderer.loadDashboardExtras = jest.fn();
+  return { dom, renderer, document: dom.window.document };
+}
+
+test('public profile renders biography/legacy attributes as text and blocks executable URLs', () => {
+  const { dom, renderer, document } = profileFixture();
+  try {
+    const username = 'synthetic" onerror="window.qualityXss=true';
+    const bio = '<img src=x onerror=alert(1)>';
+    renderer.renderProfile({
+      user: { username, avatar: 'javascript:alert(1)', bio, createdAt: new Date(), reputation: 0, badges: [], socialLinks: { github: 'javascript:alert(2)' } },
+      stats: { totalPosts: 0, totalLikes: 0 }, posts: [],
+    });
+    expect(document.querySelector('.profile-bio').textContent).toBe(bio);
+    expect(document.querySelector('.profile-bio img')).toBeNull();
+    const avatar = document.querySelector('.profile-avatar img');
+    expect(avatar.getAttribute('src')).toBe('/images/default-avatar.png');
+    expect(avatar.getAttribute('alt')).toBe(username);
+    expect(avatar.getAttributeNames().sort()).toEqual(['alt', 'src']);
+    expect(document.querySelector('[src^="javascript:"], [href^="javascript:"], [onerror]')).toBeNull();
+  } finally { dom.window.close(); }
+});
+
+test.each(['github', 'linkedin', 'twitter'])('dashboard preserves hostile legacy %s as one input value', field => {
+  const { dom, renderer, document } = profileFixture();
+  try {
+    const hostile = '\" autofocus onfocus=\"window.qualityXss=true\"><img src=x onerror=\"window.qualityXss=true\">';
+    const bio = '</textarea><img src=x onerror="window.qualityXss=true"> & biography';
+    renderer.renderDashboard({
+      user: { username: 'synthetic', reputation: 0, badges: [], bio, socialLinks: { [field]: hostile } },
+      myPosts: [], notifications: [],
+    });
+    const form = document.querySelector('#profileEditForm');
+    const input = form.querySelector(`[name="${field}"]`);
+    expect(input.value).toBe(hostile);
+    expect(input.getAttributeNames().sort()).toEqual(['name', 'placeholder', 'type', 'value']);
+    expect(form.querySelectorAll('input')).toHaveLength(3);
+    expect(form.querySelectorAll('textarea')).toHaveLength(1);
+    expect(form.querySelector('[autofocus], [onfocus], [onerror], img, script')).toBeNull();
+    expect(form.querySelector('[name="bio"]').value).toBe(bio);
+    expect(dom.window.qualityXss).toBeUndefined();
+  } finally { dom.window.close(); }
 });
 test.each([
   ['//example.invalid', null],
