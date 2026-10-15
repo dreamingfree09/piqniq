@@ -1,6 +1,6 @@
 # Piqniq continuity
 
-The proposal-era sections below are retained as history. The completed integration/adoption entry records the current installation state.
+Installation, proposal and review entries below are retained as history. The latest completed quality-audit closure entry records the accepted current state and supersedes earlier pending states.
 
 ## Inspected baseline
 
@@ -77,3 +77,23 @@ Disposition: actual Docker image build was attempted again and remains **blocked
 All review-owned application/MongoDB services are stopped and the three new disposable databases cleared. Prior ignored artifact directories and fresh review evidence remain local; no new recursive deletion was attempted. Main, unrelated work, existing data and recovery items were preserved. The configured-project mapping limitation is unchanged; direct checkout work remains expressly authorised.
 
 State: corrected source/validation complete; normal publication and exact readback belong to the updated same-PR handover. **CODEX DONE** requests Aether's independent review in **GitHub workflow implementation**. Acceptance, project closure and main integration remain pending; no deployment is authorised.
+
+## Completed quality-audit integration, local adoption and closure — 2026-10-15
+
+Work ID: **PIQNIQ-QUALITY-CLOSEOUT-20261014-CODEX — CLOSED**. Audit producer/branch owner and local verifier/adopter/completion writer: Codex. Independent source reviewer and PR integrator: Aether. Planning/review destination remains **GitHub workflow implementation**. The Owner explicitly approved PR #2 integration, local adoption and final audit closure with the documented validation limits accepted, and authorised this one normal continuity-only completion commit/push to main. This is the explicit completion exception to routine producer-branch publication.
+
+Accepted proposal: `b2e974ea9cfa7ab5a70cdfa6c70ae133f5e1ab51`. [Producer exact-revision handover](https://github.com/dreamingfree09/piqniq/pull/2#issuecomment-6181402235) and [Aether's accepted follow-up review](https://github.com/dreamingfree09/piqniq/pull/2#issuecomment-6181589847) were read back. Aether found the Docker lifecycle/profile attribute findings and the additional legacy-login regression resolved, with no remaining blocking source finding in that review. Its runtime results remain producer-run evidence, not independent Aether test reruns or a certification of universal defect absence.
+
+Actual [PR #2 integration](https://github.com/dreamingfree09/piqniq/pull/2), already performed by Aether: `6711c9f764a9c067ab6c7c642739b9edb23728c4`. Exactly two ordered parents: previous main `9f10c30c9703081fe855a7cc72ab54c105c7a388` first, approved proposal `b2e974ea9cfa7ab5a70cdfa6c70ae133f5e1ab51` second. The merge tree equals the approved proposal tree exactly. No second GitHub merge was performed by this local closure step.
+
+Local adoption is complete. The existing original Piqniq Git root, main branch, clean working tree and unchanged fetch/push origin https://github.com/dreamingfree09/piqniq.git were verified. The original main was at the expected previous revision; advertised remote main was exactly the actual merge. That exact merge was fetched/inspected through Windows local Git, not connector-only access. After parent/tree checks, original main fast-forwarded with --ff-only to the merge; the checkout was clean and HEAD/origin/main matched it. The producer worktree/branch remains preserved at the approved proposal. Quiz and unrelated projects were not changed.
+
+Accepted validation scope retains the corrected source's recorded 115 passed/zero failed/one pre-existing skip in 17 suites, 120 syntax checks, manifest-only production installation, isolated native API/chat checks and 12 Edge journey groups. **No application edit, runtime test or database operation was performed for this documentation-only closure.** These earlier results are not represented as fresh closure-step runtime tests. The complete [development-advisory assessment and validation limits](TESTING.md) are retained unchanged: zero reported production advisories and 25 development-only advisory nodes (19 moderate/six high), with dependency paths, practical exposure and safe upstream-remediation controls. The Owner accepts that documented exposure for this bounded audit closeout; it is not a clean development audit or an unsafe-upgrade waiver.
+
+Deferred deployment gates remain open: actual Linux/Alpine Docker image build (previously blocked by the unavailable engine), external SMTP delivery, deployed TLS/reverse proxy, and broader browser/device acceptance. These gates must be validated under a separately authorised release/deployment assignment. This audit closure does not establish deployment readiness or absence of every possible defect.
+
+This completion commit must have the actual merge as its sole parent and change only Docs/CONTINUITY.md. Its full final SHA, normal main push, clean local HEAD/origin/main/advertised remote main equality, document-link/whitespace checks and exact published record/acknowledgement readback are supplied in the accompanying PR #2 completion response after commit, avoiding a self-referential SHA. Existing source, testing/advisory assessment, instructions, producer branch/worktree, private evidence, ignored artifacts, real data, uploads, recovery items and unrelated work are preserved; no fresh recovery-integrity certification is claimed. No deployment, reset, force push, history rewrite, remote change or branch deletion occurred.
+
+Configured-project mapping remains a separate unchanged limitation: this conversation is associated with Quiz; no Piqniq saved-project mapping correction is claimed. Express Owner authority permitted direct work in the correct existing checkout.
+
+**Final assignment status: accepted, integrated, locally adopted and closed for the authorised quality-audit scope.** Next action: Aether independently reads back the published exact completion revision on PR #2. That readback does not reopen the deferred deployment gates or authorise new operational work.
