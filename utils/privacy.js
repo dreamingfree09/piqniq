@@ -41,3 +41,11 @@ module.exports = {
   hashUserAgent,
   hashPrincipal,
 };
+
+// Use route templates where available; token-bearing capability paths are never
+// written verbatim even when an early request error occurs before routing.
+function safeRequestPath(req) {
+  if (typeof req.route?.path === 'string') return String(req.baseUrl || '') + req.route.path;
+  return String(req.path || '').replace(/(\/(?:api\/email\/(?:verify|reset-password)|share\/card|api\/chat\/uploads)\/)[^/]+/g, '$1[REDACTED]');
+}
+module.exports.safeRequestPath = safeRequestPath;

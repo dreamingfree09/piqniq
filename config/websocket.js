@@ -1,137 +1,101 @@
 /**
- * config/websocket.js
- *
- * Socket.IO server manager.
- *
- * Maintains a connected-user map and initializes the chat namespace.
+ * Session-authenticated Socket.IO manager. Client IDs are acknowledgements,
+ * never credentials; both namespaces share the HTTP session store.
  */
 const { Server } = require('socket.io');
 const { Logger } = require('../utils/logger');
-const User = require('../models/User');
+const { sessionUser } = require('../middleware/sessionIdentity');
+const Post = require('../models/Post');
 
 class WebSocketManager {
-  constructor(httpServer) {
+  constructor(httpServer, sessionMiddleware, { sessionIdleTimeoutMs = 0, isOriginAllowed } = {}) {
+    if (typeof sessionMiddleware !== 'function') throw new Error('Socket.IO requires the HTTP session middleware');
+    const origins = (process.env.ALLOWED_ORIGINS || 'http://localhost:3000').split(',').map(value => value.trim()).filter(value => value && value !== '*');
+    const allowed = isOriginAllowed || (origin => !origin || origins.includes(origin));
     this.io = new Server(httpServer, {
-      cors: {
-        origin: process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : ['http://localhost:3000'],
-        credentials: true
-      }
+      cors: { origin: (origin, callback) => callback(null, allowed(origin)), credentials: true },
+      allowRequest: (req, callback) => callback(null, allowed(req.headers.origin)),
     });
-
-    this.connectedUsers = new Map(); // userId -> socketId
+    this.io.engine.use(sessionMiddleware);
+    this.connectedUsers = new Map();
+    this.sessionIdleTimeoutMs = sessionIdleTimeoutMs;
+    this.io.use((socket, next) => this.authenticateSocket(socket).then(() => next(), () => next(new Error('Authentication required'))));
+    this.chat = this.io.of('/chat');
+    this.chat.use((socket, next) => this.authenticateSocket(socket).then(() => next(), () => next(new Error('Authentication required'))));
+    const guardPackets = socket => {
+      socket.join('session:' + socket.request.sessionID);
+      socket.join('user:' + socket.userId);
+      // Reload before every event and periodically while idle: logout/reset/store
+      // expiry must also revoke an already-connected socket.
+      const check = () => this.authenticateSocket(socket).catch(() => socket.disconnect(true));
+      socket.use((_packet, next) => this.authenticateSocket(socket).then(() => next(), () => socket.disconnect(true)));
+      const timer = setInterval(check, 30000);
+      timer.unref();
+      socket.on('disconnect', () => clearInterval(timer));
+    };
+    this.io.on('connection', guardPackets);
+    this.chat.on('connection', guardPackets);
+    require('../chat/chatNamespace')(this.chat);
     this.init();
   }
 
+  async authenticateSocket(socket) {
+    const req = socket.request;
+    if (!req.session?.userId) throw new Error('Authentication required');
+    await new Promise((resolve, reject) => req.session.reload(error => error ? reject(error) : resolve()));
+    const user = await sessionUser(req, this.sessionIdleTimeoutMs);
+    if (!user || (socket.userId && socket.userId !== user._id.toString())) throw new Error('Authentication required');
+    socket.userId = user._id.toString();
+    socket.username = user.username;
+  }
+
   init() {
-    // Chat namespace (kept separate from main app events)
-    try {
-      const initChatNamespace = require('../chat/chatNamespace');
-      this.chat = this.io.of('/chat');
-      initChatNamespace(this.chat);
-      Logger.info('Chat namespace initialized');
-    } catch (error) {
-      Logger.error('Chat namespace initialization failed; continuing without chat', {
-        error: error?.message
+    this.io.on('connection', socket => {
+      if (!this.connectedUsers.has(socket.userId)) this.connectedUsers.set(socket.userId, new Set());
+      this.connectedUsers.get(socket.userId).add(socket.id);
+      socket.on('authenticate', userId => {
+        if (typeof userId !== 'string' || userId !== socket.userId) return socket.emit('auth_error', { message: 'Authentication required' });
+        socket.emit('authenticated', { success: true, userId: socket.userId });
       });
-    }
-
-    this.io.on('connection', (socket) => {
-      Logger.info('WebSocket client connected', { socketId: socket.id });
-
-      // Handle user authentication
-      socket.on('authenticate', async (userId) => {
+      socket.on('join-post', async postId => {
+        if (typeof postId !== 'string' || !/^[a-f\d]{24}$/i.test(postId)) return;
         try {
-          const user = await User.findById(userId);
-          if (user) {
-            this.connectedUsers.set(userId, socket.id);
-            socket.userId = userId;
-            socket.join(`user:${userId}`);
-            Logger.info('User authenticated', { userId, socketId: socket.id });
-            
-            // Send initial connection success
-            socket.emit('authenticated', { 
-              success: true,
-              userId 
-            });
-          }
-        } catch (error) {
-          Logger.error('WebSocket authentication failed', { error: error.message });
-        }
+          if (await Post.exists({ _id: postId, deletedAt: null })) socket.join('post:' + postId);
+        } catch { socket.emit('auth_error', { message: 'Post temporarily unavailable' }); }
       });
-
-      // Handle typing indicators
-      socket.on('typing', (data) => {
-        socket.to(`post:${data.postId}`).emit('user-typing', {
-          username: data.username,
-          postId: data.postId
-        });
+      socket.on('leave-post', postId => {
+        if (typeof postId === 'string' && /^[a-f\d]{24}$/i.test(postId)) socket.leave('post:' + postId);
       });
-
-      // Handle post interactions
-      socket.on('join-post', (postId) => {
-        socket.join(`post:${postId}`);
-        Logger.info('User joined post room', { postId, socketId: socket.id });
+      socket.on('typing', data => {
+        const postId = data?.postId;
+        if (typeof postId !== 'string' || !socket.rooms.has('post:' + postId)) return;
+        socket.to('post:' + postId).emit('user-typing', { username: socket.username, postId });
       });
-
-      socket.on('leave-post', (postId) => {
-        socket.leave(`post:${postId}`);
-      });
-
-      // Handle disconnection
       socket.on('disconnect', () => {
-        if (socket.userId) {
-          this.connectedUsers.delete(socket.userId);
-          Logger.info('User disconnected', { userId: socket.userId });
-        }
+        const sockets = this.connectedUsers.get(socket.userId);
+        sockets?.delete(socket.id);
+        if (!sockets?.size) this.connectedUsers.delete(socket.userId);
       });
     });
   }
 
-  // Send notification to specific user
+  disconnectSession(sessionId) {
+    for (const namespace of [this.io.of('/'), this.chat]) namespace.in('session:' + sessionId).disconnectSockets();
+  }
+  disconnectUser(userId) {
+    for (const namespace of [this.io.of('/'), this.chat]) namespace.in('user:' + userId).disconnectSockets();
+  }
   sendNotification(userId, notification) {
-    const socketId = this.connectedUsers.get(userId.toString());
-    if (socketId) {
-      this.io.to(socketId).emit('notification', notification);
-      Logger.info('Notification sent via WebSocket', { userId, type: notification.type });
-    }
+    this.io.to('user:' + userId.toString()).emit('notification', notification);
   }
-
-  // Broadcast new post to all users
-  broadcastNewPost(post) {
-    this.io.emit('new-post', post);
-    Logger.info('New post broadcasted', { postId: post._id });
-  }
-
-  // Send update to post room
-  sendPostUpdate(postId, update) {
-    this.io.to(`post:${postId}`).emit('post-update', update);
-  }
-
-  // Send like update
-  sendLikeUpdate(postId, data) {
-    this.io.to(`post:${postId}`).emit('like-update', data);
-  }
-
-  // Send new reply notification
+  broadcastNewPost(post) { this.io.emit('new-post', post); }
+  sendPostUpdate(postId, update) { this.io.to('post:' + postId).emit('post-update', update); }
+  sendLikeUpdate(postId, data) { this.io.to('post:' + postId).emit('like-update', data); }
   sendReplyNotification(postId, reply) {
-    const payload = reply && typeof reply.toObject === 'function'
-      ? reply.toObject()
-      : reply;
-    this.io.to(`post:${postId}`).emit('new-reply', {
-      postId,
-      ...payload
-    });
+    const payload = reply && typeof reply.toObject === 'function' ? reply.toObject() : reply;
+    this.io.to('post:' + postId).emit('new-reply', { postId, ...payload });
   }
-
-  // Get online users count
-  getOnlineUsersCount() {
-    return this.connectedUsers.size;
-  }
-
-  // Check if user is online
-  isUserOnline(userId) {
-    return this.connectedUsers.has(userId.toString());
-  }
+  getOnlineUsersCount() { return this.connectedUsers.size; }
+  isUserOnline(userId) { return this.connectedUsers.has(userId.toString()); }
 }
-
 module.exports = WebSocketManager;

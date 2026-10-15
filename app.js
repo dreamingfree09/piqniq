@@ -9,6 +9,18 @@
  * - Mount API routes and serve static frontend assets
  * - Seed system roles + curated content + site content when the DB is available
  */
+// Load configuration before logger/privacy modules snapshot environment values.
+require('dotenv').config();
+const nodeEnv = process.env.NODE_ENV || 'development';
+const isTestRuntime = nodeEnv === 'test' || process.env.JEST_WORKER_ID !== undefined;
+
+const defaultDevMongoUri = 'mongodb://localhost:27017/piqniq';
+const mongoUri = isTestRuntime
+  ? require('./config/testDatabase').resolveTestMongoUri()
+  : process.env.MONGODB_URI || defaultDevMongoUri;
+process.env.MONGODB_URI = mongoUri;
+
+
 const express = require('express');
 const app = express();
 const http = require('http');
@@ -26,7 +38,6 @@ const cors = require('cors');
 const compression = require('compression');
 const { Logger, requestLogger } = require('./utils/logger');
 const { errorHandler, notFound } = require('./middleware/errorHandler');
-require('dotenv').config();
 
 // Import database connection
 const connectDB = require('./config/database');
@@ -66,43 +77,6 @@ const requirePageAuth = (req, res, next) => {
   const nextUrl = encodeURIComponent(req.originalUrl || '/livechat.html');
   return res.redirect(302, `/?auth=required&next=${nextUrl}`);
 };
-
-const nodeEnv = process.env.NODE_ENV || 'development';
-const isTestRuntime = nodeEnv === 'test' || process.env.JEST_WORKER_ID !== undefined;
-
-const looksLikeTestMongoUri = (uri) => {
-  const s = String(uri || '').trim();
-  if (!s) return false;
-
-  // Heuristic: treat any URI containing "test" in the DB name/path as a test DB.
-  // This avoids accidentally running Jest against the developer DB when .env is loaded.
-  try {
-    const parsed = new URL(s);
-    const pathname = parsed.pathname || '';
-    const dbName = pathname.startsWith('/') ? pathname.slice(1) : pathname;
-    return /(^|[-_])test($|[-_])/i.test(dbName) || /test/i.test(dbName);
-  } catch {
-    return /test/i.test(s);
-  }
-};
-
-const defaultDevMongoUri = 'mongodb://localhost:27017/piqniq';
-const defaultTestMongoUri = 'mongodb://localhost:27017/piqniq-test';
-
-let mongoUri = process.env.MONGODB_URI;
-
-if (isTestRuntime) {
-  // Safety: Jest tests delete data. Never allow them to run against the dev/prod DB.
-  if (!mongoUri || !looksLikeTestMongoUri(mongoUri)) {
-    mongoUri = process.env.MONGODB_URI_TEST || defaultTestMongoUri;
-    process.env.MONGODB_URI = mongoUri;
-  }
-} else {
-  mongoUri = mongoUri || defaultDevMongoUri;
-  if (!process.env.MONGODB_URI) {
-    process.env.MONGODB_URI = mongoUri;
-  }
-}
 
 const sessionSecret = process.env.SESSION_SECRET || (
   nodeEnv === 'production'
@@ -308,7 +282,7 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Session configuration
-app.use(session({
+const sessionMiddleware = session({
   secret: sessionSecret,
   resave: false,
   saveUninitialized: false,
@@ -324,7 +298,26 @@ app.use(session({
     secure: cookieSecure,
     sameSite: 'strict' // CSRF protection
   }
-}));
+});
+app.locals.sessionMiddleware = sessionMiddleware;
+app.locals.sessionIdleTimeoutMs = sessionIdleTimeoutMs;
+app.use(sessionMiddleware);
+
+// Reject revoked/deleted account sessions on every HTTP route, including optional-auth routes.
+const { sessionUser } = require('./middleware/sessionIdentity');
+app.use(async (req, res, next) => {
+  if (!req.session?.userId) return next();
+  try {
+    if (await sessionUser(req, sessionIdleTimeoutMs)) return next();
+    const sessionId = req.sessionID;
+    req.session.destroy(() => {
+      global.wsManager?.disconnectSession?.(sessionId);
+      res.clearCookie('connect.sid');
+      if (req.path.startsWith('/api/')) return res.status(401).json({ error: 'Session expired' });
+      return res.redirect(302, '/?auth=expired');
+    });
+  } catch { return res.status(503).json({ error: 'Authentication temporarily unavailable' }); }
+});
 
 // Request logging
 app.use(requestLogger);
@@ -747,7 +740,7 @@ if (!isTestRuntime && require.main === module) {
         process.exit(1);
       });
 
-      server.listen(port, () => {
+      server.listen(port, process.env.HOST || '0.0.0.0', () => {
         Logger.info(`Server running on port ${port}`, {
           environment: process.env.NODE_ENV || 'development',
           port
@@ -756,7 +749,10 @@ if (!isTestRuntime && require.main === module) {
         // Initialize WebSocket (do not crash the whole server if WS fails)
         try {
           const WebSocketManager = require('./config/websocket');
-          global.wsManager = new WebSocketManager(server);
+          global.wsManager = new WebSocketManager(server, sessionMiddleware, {
+            sessionIdleTimeoutMs,
+            isOriginAllowed: origin => !origin || allowedOrigins.includes(origin) || (allowAnyLocalhostOrigin && isLocalhostOrigin(origin)),
+          });
           Logger.info('WebSocket server initialized');
         } catch (wsError) {
           Logger.error('WebSocket initialization failed; continuing without WebSockets', {

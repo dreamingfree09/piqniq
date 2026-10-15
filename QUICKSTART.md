@@ -3,7 +3,7 @@
 ## 🚀 Getting Started
 
 ### Prerequisites
-- Node.js 14+ installed
+- Node.js 22+ installed (validated on 24.11.0)
 - MongoDB running locally or connection string ready
 - Git for version control
 
@@ -14,8 +14,8 @@
 git clone https://github.com/dreamingfree09/piqniq.git
 cd piqniq
 
-# Install dependencies (516 packages)
-npm install
+# Install the locked dependencies
+npm ci
 
 # Create .env file
 cp .env.example .env
@@ -36,22 +36,22 @@ SESSION_SECRET=your-secret-key-here
 SESSION_IDLE_TIMEOUT_MINUTES=30
 
 # Email (for password reset)
-EMAIL_HOST=smtp.gmail.com
-EMAIL_PORT=587
-EMAIL_USER=your-email@gmail.com
-EMAIL_PASS=your-email-password
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=your-email@gmail.com
+SMTP_PASS=your-email-password
 
 # Server
 PORT=3000
 NODE_ENV=development
 
 # Client URL (for email links)
-CLIENT_URL=http://localhost:3000
+BASE_URL=http://localhost:3000
 ```
 
 Notes:
 - If `MONGODB_URI` is not set, the server falls back to
-  `mongodb://localhost:27017/piqniq` (or `piqniq-test` when `NODE_ENV=test`).
+  `mongodb://localhost:27017/piqniq` for normal application startup. Test mode instead requires explicit disposable database selection; see [isolated validation](Docs/TESTING.md).
 - If port `3000` is already in use, the server will automatically try `3001`,
   `3002`, etc. (up to 10 attempts). You can also set `PORT` explicitly.
 
@@ -471,3 +471,7 @@ See LICENSE file for details.
 **Happy Coding! 🚀**
 
 For questions or support, please open an issue on GitHub.
+
+## Safe validation
+
+Follow [isolated validation](Docs/TESTING.md) before running tests, chat smoke checks or local test servers. Set HOST=127.0.0.1 for private fixtures and use a new database/data directory; do not run start:clean or seed/bootstrap scripts against existing data.

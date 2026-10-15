@@ -257,9 +257,10 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!raw) return null;
 
       // Prevent open redirects: only allow same-site relative paths.
-      if (!raw.startsWith('/')) return null;
-      if (raw.startsWith('//')) return null;
-      return raw;
+      if (!raw.startsWith('/') || raw.startsWith('//') || raw.includes(String.fromCharCode(92))) return null;
+      const url = new URL(raw, window.location.origin);
+      if (url.origin !== window.location.origin) return null;
+      return url.pathname + url.search + url.hash;
     } catch {
       return null;
     }

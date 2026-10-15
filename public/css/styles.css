@@ -254,6 +254,8 @@ header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
   box-shadow: var(--shadow-sm);
   position: sticky;
   top: 0;
@@ -347,6 +349,7 @@ nav a:hover::after {
 .auth-buttons {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 12px;
 }
 
@@ -780,6 +783,9 @@ button.close-modal:hover {
 }
 
 .portfolio-hero h2, .pathways-hero h2, .forum-hero h2 {
+  color: white;
+  -webkit-text-fill-color: currentColor;
+  background: none;
   font-family: 'Cormorant Garamond', serif;
   font-size: 3em;
   margin-bottom: 15px;

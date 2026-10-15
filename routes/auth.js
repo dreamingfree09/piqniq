@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
 const User = require('../models/User');
+const { establishSession } = require('../middleware/sessionIdentity');
 const { registerValidation, loginValidation } = require('../utils/validators');
 const { sendVerificationEmail } = require('../utils/email');
 const { Logger } = require('../utils/logger');
@@ -54,9 +55,8 @@ router.post('/register', registerValidation, async (req, res) => {
       }
     }
 
-    // Set session
-    req.session.userId = user._id;
-    req.session.username = user.username;
+    // Replace any anonymous/previous account session before authenticating.
+    await establishSession(req, user);
 
     // Send verification email when verification is required (don't fail registration if email fails)
     if (!user.isEmailVerified && user.emailVerificationToken) {
@@ -118,9 +118,8 @@ router.post('/login', loginValidation, async (req, res) => {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
 
-    // Set session
-    req.session.userId = user._id;
-    req.session.username = user.username;
+    // Replace any anonymous/previous account session before authenticating.
+    await establishSession(req, user);
 
     const permissions = await computePermissionsForUser(user);
 
@@ -142,10 +141,12 @@ router.post('/login', loginValidation, async (req, res) => {
 
 // Logout
 router.post('/logout', (req, res) => {
+  const sessionId = req.sessionID;
   req.session.destroy((err) => {
     if (err) {
       return res.status(500).json({ error: 'Error logging out' });
     }
+    global.wsManager?.disconnectSession?.(sessionId);
     res.clearCookie('connect.sid');
     res.json({ message: 'Logout successful' });
   });
@@ -159,7 +160,7 @@ router.get('/me', async (req, res) => {
     }
 
     const user = await User.findById(req.session.userId)
-      .select('-password')
+      .select('-password -emailVerificationToken -passwordResetToken')
       .populate('roles', 'name permissions');
     if (!user) {
       return res.status(404).json({ error: 'User not found' });

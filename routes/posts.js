@@ -33,6 +33,8 @@ const repForVote = (targetType, value) => {
 };
 
 const clampReputation = (rep) => Math.max(0, rep);
+const escapeRegex = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+router.param('id', (req, res, next, id) => /^[a-f0-9]{24}$/i.test(id) ? next() : res.status(400).json({ error: 'Invalid ID format' }));
 
 const normalizePostTags = (value) => {
   const arr = Array.isArray(value) ? value : [];
@@ -70,9 +72,10 @@ router.get('/', async (req, res) => {
 
     // Add search functionality (fallback to regex; unified search uses /api/search)
     if (search) {
+      if (typeof search !== 'string' || search.length > 200) return res.status(400).json({ error: 'Invalid search text' });
       query.$or = [
-        { title: { $regex: search, $options: 'i' } },
-        { content: { $regex: search, $options: 'i' } }
+        { title: { $regex: escapeRegex(search), $options: 'i' } },
+        { content: { $regex: escapeRegex(search), $options: 'i' } }
       ];
     }
 
@@ -82,14 +85,15 @@ router.get('/', async (req, res) => {
     else if (sort === 'popular') sortOption = { likes: -1, views: -1 };
     else if (sort === 'mostReplies') sortOption = { 'replies': -1 };
 
-    const safeLimit = Number.parseInt(String(limit), 10) || 10;
-    const safePage = Number.parseInt(String(page), 10) || 1;
+    const safeLimit = Math.min(50, Math.max(1, Number.parseInt(String(limit), 10) || 10));
+    const safePage = Math.min(10000, Math.max(1, Number.parseInt(String(page), 10) || 1));
 
     // Pinned posts first
     const pinnedPosts = await Post.find({ ...query, isPinned: true })
       .select('title category author createdAt voteScore views isPinned likes acceptedReplyId replies._id')
       .populate('author', 'username avatar reputation')
       .sort(sortOption)
+      .limit(100)
       .lean();
 
     const regularPosts = await Post.find({ ...query, isPinned: false })

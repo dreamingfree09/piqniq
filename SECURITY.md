@@ -33,7 +33,7 @@
 **Validation Rules:**
 - **Email:** Valid format, normalized, max 255 chars
 - **Username:** 3-30 chars, alphanumeric + underscore/hyphen, no reserved names
-- **Password:** 8-128 chars, must include uppercase, lowercase, and number
+- **Password:** 8+ characters, at most 72 UTF-8 bytes for new passwords, with uppercase, lowercase, and number
 - **Post Title:** 5-200 chars, HTML escaped
 - **Post Content:** 10-10,000 chars
 - **URLs:** Valid format, domain-specific checks for social links
@@ -80,7 +80,7 @@
 
 **Features:**
 - **Centralized error handler:** Consistent error responses
-- **Development vs Production:** Stack traces only in development
+- **Development vs Production:** No internal exception stacks in API responses
 - **Specific error types:** Validation, cast, duplicate key errors
 - **Logging:** All errors logged to files
 
@@ -286,7 +286,7 @@ Current requirements:
 - At least one lowercase letter
 - At least one number
 - Cannot contain username
-- Maximum 128 characters
+- New/changed passwords: maximum 72 UTF-8 bytes (bcrypt capacity); legacy login compatibility is retained
 
 **Recommended enhancements:**
 - Special characters required
@@ -318,3 +318,7 @@ Current requirements:
 **Last Updated:** December 31, 2025  
 **Security Version:** 2.0  
 **Review Date:** Review security measures quarterly
+
+## Quality closeout hardening
+
+See [isolated validation and compatibility](Docs/TESTING.md) for session rotation/revocation, atomic capability consumption, new password byte limits, credential-safe responses/logging, and the protected test database boundary. Both socket namespaces now use the HTTP session rather than a supplied user ID. Existing Copilot security requirements remain in force. Container/TLS/SMTP acceptance and development dependency advisories must be reported separately from automated source validation.

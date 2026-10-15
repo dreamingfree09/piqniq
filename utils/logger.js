@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { stableHash, hashIp, hashUserAgent, hashPrincipal } = require('./privacy');
+const { stableHash, hashIp, hashUserAgent, hashPrincipal, safeRequestPath } = require('./privacy');
 
 // Ensure logs directory exists
 const logsDir = path.join(__dirname, '..', 'logs');
@@ -9,7 +9,7 @@ if (!fs.existsSync(logsDir)) {
 }
 
 const LOG_MAX_BYTES = Number.parseInt(process.env.LOG_MAX_BYTES || '10485760', 10); // default: 10MB
-const SENSITIVE_KEY_RE = /^(password|pass|pwd|token|secret|session|cookie|authorization|apiKey|email)$/i;
+const SENSITIVE_KEY_RE = /(password|pass|pwd|token|secret|session|cookie|authorization|apiKey|email|verificationUrl|resetUrl)/i;
 
 const redactMeta = (value, key = '') => {
   if (SENSITIVE_KEY_RE.test(String(key || ''))) return '[REDACTED]';
@@ -133,7 +133,7 @@ class Logger {
 
     const log = formatLog(LogLevel.INFO, 'HTTP Request', {
       method: req.method,
-      path: req.path,
+      path: safeRequestPath(req),
       status: res.statusCode,
       responseTime: `${responseTime}ms`,
       ...(ipHash ? { ipHash } : {}),

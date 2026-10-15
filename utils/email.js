@@ -125,7 +125,7 @@ async function sendVerificationEmail(user, token) {
     const info = await withTimeout(transporter.sendMail(mailOptions), 15000, 'sendVerificationEmail');
     Logger.info('Verification email sent', { 
       messageId: info.messageId,
-      to: user.email 
+      userId: user._id
     });
     
     // Log ethereal preview URL in development
@@ -146,6 +146,7 @@ async function sendVerificationEmail(user, token) {
 // Send password reset email
 async function sendPasswordResetEmail(user, token) {
   try {
+    if (process.env.NODE_ENV === 'test' || process.env.JEST_WORKER_ID !== undefined) return { messageId: 'skipped-test-runtime', accepted: [user.email] };
     const transporter = createTransporter();
     const resetUrl = `${process.env.BASE_URL || 'http://localhost:3000'}/reset-password?token=${token}`;
     
@@ -200,7 +201,7 @@ async function sendPasswordResetEmail(user, token) {
     const info = await withTimeout(transporter.sendMail(mailOptions), 15000, 'sendPasswordResetEmail');
     Logger.info('Password reset email sent', { 
       messageId: info.messageId,
-      to: user.email 
+      userId: user._id
     });
     
     if (process.env.NODE_ENV !== 'production') {
@@ -220,6 +221,7 @@ async function sendPasswordResetEmail(user, token) {
 // Send notification email
 async function sendNotificationEmail(user, notification) {
   try {
+    if (process.env.NODE_ENV === 'test' || process.env.JEST_WORKER_ID !== undefined) return { messageId: 'skipped-test-runtime', accepted: [user.email] };
     const transporter = createTransporter();
     
     const mailOptions = {
@@ -264,7 +266,7 @@ async function sendNotificationEmail(user, notification) {
     const info = await withTimeout(transporter.sendMail(mailOptions), 15000, 'sendNotificationEmail');
     Logger.info('Notification email sent', { 
       messageId: info.messageId,
-      to: user.email 
+      userId: user._id
     });
     
     return info;

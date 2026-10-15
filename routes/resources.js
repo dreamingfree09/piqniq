@@ -315,6 +315,14 @@ router.post('/links', isAuthenticated, requirePermission(PERMISSIONS.RESOURCES_C
 router.post('/pdf', isAuthenticated, requirePermission(PERMISSIONS.RESOURCES_CREATE), uploadPdf.single('file'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+    const header = Buffer.alloc(5);
+    const fd = fs.openSync(req.file.path, 'r');
+    try { fs.readSync(fd, header, 0, 5, 0); } finally { fs.closeSync(fd); }
+    if (header.toString('ascii') !== '%PDF-') {
+      fs.unlinkSync(req.file.path);
+      return res.status(400).json({ error: 'File content did not match PDF type' });
+    }
+
 
     const title = String(req.body?.title || '').trim() || safeBasename(req.file.originalname);
     const description = String(req.body?.description || '').trim();

@@ -41,7 +41,10 @@ function main() {
     '/js/chat.js'
   ];
 
-  const missingIncludes = requiredIncludes.filter((s) => !html.includes(s));
+  // chat.js lazily loads the same-origin client after authentication.
+  const dynamicSocketLoader = js.includes("script.src = '/socket.io/socket.io.js'") || js.includes('script.src = "/socket.io/socket.io.js"');
+  const missingIncludes = requiredIncludes.filter((source) =>
+    !html.includes(source) && !(source === '/socket.io/socket.io.js' && dynamicSocketLoader));
 
   if (missing.length || missingIncludes.length) {
     console.error('[chat-ui-sanity] FAIL');

@@ -10,6 +10,8 @@ const router = express.Router();
 const Post = require('../models/Post');
 const User = require('../models/User');
 const { generateStructuredData } = require('../utils/seo');
+const { Logger } = require('../utils/logger');
+const { stableHash } = require('../utils/privacy');
 
 // Health check endpoint
 router.get('/health', async (req, res) => {
@@ -56,17 +58,17 @@ router.get('/health', async (req, res) => {
 // Generate sitemap
 router.get('/sitemap.xml', async (req, res) => {
   try {
-    const baseUrl = process.env.APP_URL || 'http://localhost:3000';
+    const baseUrl = process.env.BASE_URL || process.env.APP_URL || 'http://localhost:3000';
     
     // Get all posts for sitemap
-    const posts = await Post.find()
+    const posts = await Post.find({ deletedAt: null })
       .select('_id updatedAt')
       .sort({ updatedAt: -1 })
       .limit(1000);
 
     // Get all users for sitemap
     const users = await User.find()
-      .select('username updatedAt')
+      .select('username createdAt')
       .sort({ updatedAt: -1 })
       .limit(1000);
 
@@ -96,7 +98,7 @@ router.get('/sitemap.xml', async (req, res) => {
     posts.forEach(post => {
       sitemap += `
   <url>
-    <loc>${baseUrl}/post.html?id=${post._id}</loc>
+    <loc>${baseUrl}/post/${post._id}</loc>
     <lastmod>${post.updatedAt.toISOString()}</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.7</priority>
@@ -108,7 +110,7 @@ router.get('/sitemap.xml', async (req, res) => {
       sitemap += `
   <url>
     <loc>${baseUrl}/profile.html?user=${user.username}</loc>
-    <lastmod>${user.updatedAt.toISOString()}</lastmod>
+    <lastmod>${user.createdAt.toISOString()}</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>`;
@@ -125,7 +127,7 @@ router.get('/sitemap.xml', async (req, res) => {
 
 // Robots.txt
 router.get('/robots.txt', (req, res) => {
-  const baseUrl = process.env.APP_URL || 'http://localhost:3000';
+  const baseUrl = process.env.BASE_URL || process.env.APP_URL || 'http://localhost:3000';
   
   const robots = `User-agent: *
 Allow: /
@@ -141,7 +143,7 @@ Sitemap: ${baseUrl}/api/system/sitemap.xml`;
 // Get post metadata for SEO (for dynamic meta tag generation)
 router.get('/meta/post/:id', async (req, res) => {
   try {
-    const post = await Post.findById(req.params.id)
+    const post = await Post.findOne({ _id: req.params.id, deletedAt: null })
       .populate('author', 'username avatar')
       .select('title content createdAt updatedAt author likes replies category');
 
@@ -192,16 +194,9 @@ router.get('/meta/user/:username', async (req, res) => {
 
 // Analytics endpoint (for future integration)
 router.post('/analytics/track', (req, res) => {
-  const { event, data } = req.body;
-  
-  // Log analytics event (can be sent to analytics service)
-  console.log('Analytics Event:', {
-    event,
-    data,
-    timestamp: new Date().toISOString(),
-    ip: req.ip,
-    userAgent: req.get('user-agent')
-  });
+  // This placeholder has no external analytics sink. Do not retain arbitrary
+  // client data or raw network identifiers in an unauthenticated log endpoint.
+  Logger.info('Analytics event', { eventHash: stableHash(String(req.body?.event || '').slice(0, 200)) });
 
   res.json({ success: true });
 });

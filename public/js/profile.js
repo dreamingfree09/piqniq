@@ -122,19 +122,19 @@ class ProfileManager {
               <form id="profileEditForm">
                 <div class="form-group">
                   <label>Bio</label>
-                  <textarea name="bio" maxlength="500">${data.user.bio || ''}</textarea>
+                  <textarea name="bio" maxlength="500">${this.escapeHtml(data.user.bio || '')}</textarea>
                 </div>
                 <div class="form-group">
                   <label>GitHub</label>
-                  <input type="url" name="github" value="${data.user.socialLinks?.github || ''}" placeholder="https://github.com/username">
+                  <input type="url" name="github" value="${this.escapeHtml(data.user.socialLinks?.github || '')}" placeholder="https://github.com/username">
                 </div>
                 <div class="form-group">
                   <label>LinkedIn</label>
-                  <input type="url" name="linkedin" value="${data.user.socialLinks?.linkedin || ''}" placeholder="https://linkedin.com/in/username">
+                  <input type="url" name="linkedin" value="${this.escapeHtml(data.user.socialLinks?.linkedin || '')}" placeholder="https://linkedin.com/in/username">
                 </div>
                 <div class="form-group">
                   <label>Twitter</label>
-                  <input type="url" name="twitter" value="${data.user.socialLinks?.twitter || ''}" placeholder="https://twitter.com/username">
+                  <input type="url" name="twitter" value="${this.escapeHtml(data.user.socialLinks?.twitter || '')}" placeholder="https://twitter.com/username">
                 </div>
                 <button type="submit" class="btn-primary">Save Profile</button>
               </form>
@@ -277,16 +277,16 @@ class ProfileManager {
       <div class="profile">
         <div class="profile-header">
           <div class="profile-avatar">
-            <img src="${data.user.avatar}" alt="${data.user.username}">
+            <img src="${this.safeUrl(data.user.avatar, '/images/default-avatar.png')}" alt="${this.escapeHtml(data.user.username)}">
           </div>
           <div class="profile-info">
-            <h1>${data.user.username}</h1>
-            <p class="profile-bio">${data.user.bio || 'No bio yet'}</p>
+            <h1>${this.escapeHtml(data.user.username)}</h1>
+            <p class="profile-bio">${this.escapeHtml(data.user.bio || 'No bio yet')}</p>
             <div class="profile-social">
               <a href="/portfolio/${encodeURIComponent(data.user.username)}">Portfolio</a>
-              ${data.user.socialLinks?.github ? `<a href="${data.user.socialLinks.github}" target="_blank"><i>GitHub</i></a>` : ''}
-              ${data.user.socialLinks?.linkedin ? `<a href="${data.user.socialLinks.linkedin}" target="_blank"><i>LinkedIn</i></a>` : ''}
-              ${data.user.socialLinks?.twitter ? `<a href="${data.user.socialLinks.twitter}" target="_blank"><i>Twitter</i></a>` : ''}
+              ${data.user.socialLinks?.github ? `<a href="${this.safeUrl(data.user.socialLinks.github)}" target="_blank" rel="noopener noreferrer"><i>GitHub</i></a>` : ''}
+              ${data.user.socialLinks?.linkedin ? `<a href="${this.safeUrl(data.user.socialLinks.linkedin)}" target="_blank" rel="noopener noreferrer"><i>LinkedIn</i></a>` : ''}
+              ${data.user.socialLinks?.twitter ? `<a href="${this.safeUrl(data.user.socialLinks.twitter)}" target="_blank" rel="noopener noreferrer"><i>Twitter</i></a>` : ''}
             </div>
           </div>
           <div class="profile-stats">
@@ -310,7 +310,7 @@ class ProfileManager {
         </div>
 
         <div class="profile-content">
-          <h3>${data.user.username}'s Posts</h3>
+          <h3>${this.escapeHtml(data.user.username)}'s Posts</h3>
           <div class="profile-posts">
             ${this.renderPostsList(data.posts)}
           </div>
@@ -366,8 +366,8 @@ class ProfileManager {
     return `<div class="user-badges">
       ${badges.map(badge => `
         <div class="badge-item" title="Earned ${this.formatDate(badge.earnedAt)}">
-          <span class="badge-icon">${badge.icon || '🏆'}</span>
-          <span class="badge-name">${badge.name}</span>
+          <span class="badge-icon">${this.escapeHtml(badge.icon || '🏆')}</span>
+          <span class="badge-name">${this.escapeHtml(badge.name)}</span>
         </div>
       `).join('')}
     </div>`;
@@ -836,16 +836,25 @@ class ProfileManager {
     return d.toLocaleDateString();
   }
 
+  safeUrl(value, fallback = '') {
+    try {
+      const url = new URL(String(value || ''), window.location.origin);
+      if (value && ['http:', 'https:'].includes(url.protocol)) return this.escapeHtml(url.href);
+    } catch { /* Invalid legacy profile URLs are omitted. */ }
+    return fallback;
+  }
+
   escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
+    // This helper is also used in quoted attributes: DOM text serialization alone
+    // does not encode quotation marks and would let legacy values add attributes.
+    const entities = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+    return String(text ?? '').replace(/[&<>"']/g, character => entities[character]);
   }
 
   showError(message) {
     const container = document.getElementById('profileContainer') || document.getElementById('dashboardContainer');
     if (container) {
-      container.innerHTML = `<div class="error-message">${message}</div>`;
+      container.innerHTML = `<div class="error-message">${this.escapeHtml(message)}</div>`;
     }
   }
 }

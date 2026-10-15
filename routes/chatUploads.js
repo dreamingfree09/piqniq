@@ -15,6 +15,7 @@ const path = require('path');
 const fs = require('fs');
 
 const { isAuthenticated } = require('../middleware/auth');
+const { IMAGE_FORMATS, validRaster, removeUploadedFile } = require('../utils/uploadValidation');
 const { Logger } = require('../utils/logger');
 
 const User = require('../models/User');
@@ -42,7 +43,7 @@ function isAllowedMime(mime) {
   const m = String(mime || '').toLowerCase();
   if (!m) return false;
 
-  if (m.startsWith('image/')) {
+  if (Object.hasOwn(IMAGE_FORMATS, m)) {
     // jpeg, png, gif, webp, etc.
     return true;
   }
@@ -69,7 +70,7 @@ const uploadChatFile = multer({
   limits: { fileSize: MAX_CHAT_UPLOAD_BYTES },
   fileFilter: (req, file, cb) => {
     if (!isAllowedMime(file.mimetype)) {
-      cb(new Error('Only small images, .txt, and .pdf files are allowed.'));
+      cb(Object.assign(new Error('Only small raster images, .txt, and .pdf files are allowed.'), { statusCode: 400 }));
       return;
     }
     cb(null, true);
@@ -94,7 +95,15 @@ router.post('/uploads', isAuthenticated, uploadChatFile.single('file'), async (r
       return res.status(400).json({ message: 'roomId is required' });
     }
 
-    const room = await ChatRoom.findById(roomId).select('_id isPrivate');
+    if (!/^[a-f0-9]{24}$/i.test(roomId)) {
+      await removeUploadedFile(req);
+      return res.status(400).json({ message: 'Invalid room' });
+    }
+    if (Object.hasOwn(IMAGE_FORMATS, req.file.mimetype) && !(await validRaster(req.file))) {
+      await removeUploadedFile(req);
+      return res.status(400).json({ message: 'File content did not match its image type' });
+    }
+    const room = await ChatRoom.findById(roomId).select('_id isPrivate createdBy');
     if (!room) {
       try {
         fs.unlinkSync(req.file.path);
@@ -104,6 +113,13 @@ router.post('/uploads', isAuthenticated, uploadChatFile.single('file'), async (r
       return res.status(404).json({ message: 'Room not found' });
     }
 
+    // Private uploads require the creator or a currently joined socket from this session.
+    const joined = [...(global.wsManager?.chat?.sockets?.values() || [])].some(socket =>
+      socket.request.sessionID === req.sessionID && socket.userId === String(req.session.userId) && socket.rooms.has('chatroom:' + roomId));
+    if (room.isPrivate && String(room.createdBy || '') !== String(req.session.userId) && !joined) {
+      await removeUploadedFile(req);
+      return res.status(403).json({ message: 'Join the private room before uploading' });
+    }
     const user = await User.findById(req.session.userId).select('_id username');
     if (!user) {
       try {
@@ -127,7 +143,7 @@ router.post('/uploads', isAuthenticated, uploadChatFile.single('file'), async (r
     Logger.info('Chat upload stored', {
       userId: req.session.userId,
       roomId: roomId,
-      storedName: doc.storedName,
+      uploadId: doc._id,
       size: doc.size,
       mimeType: doc.mimeType
     });
@@ -144,6 +160,7 @@ router.post('/uploads', isAuthenticated, uploadChatFile.single('file'), async (r
       }
     });
   } catch (error) {
+    await removeUploadedFile(req);
     Logger.error('Chat upload failed', { error: error?.message });
     return res.status(500).json({ message: 'Failed to upload file' });
   }

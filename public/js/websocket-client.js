@@ -22,7 +22,7 @@ class WebSocketClient {
 
     try {
       const userData = JSON.parse(currentUser);
-      this.connect(userData._id);
+      this.connect(userData._id || userData.id);
     } catch (error) {
       console.error('Failed to parse user data:', error);
     }

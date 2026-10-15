@@ -10,6 +10,9 @@
  */
 module.exports = {
   testEnvironment: 'node',
+  testPathIgnorePatterns: ['node_modules', '[.]tmp_'],
+  coveragePathIgnorePatterns: ['node_modules', '[.]tmp_'],
+  setupFiles: ['<rootDir>/test-support/databaseBoundary.js'],
   coverageDirectory: 'coverage',
   collectCoverageFrom: [
     'routes/**/*.js',

@@ -1,5 +1,5 @@
 # Node.js version
-FROM node:18-alpine
+FROM node:24-alpine
 
 # Create app directory
 WORKDIR /usr/src/app
@@ -7,8 +7,11 @@ WORKDIR /usr/src/app
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm ci --only=production
+# The manifest lifecycle invokes this script before the full source COPY.
+COPY scripts/apply-optional-patches.js ./scripts/
+
+# Omit development tooling; postinstall safely skips its optional cosmetic patch.
+RUN npm ci --omit=dev
 
 # Copy app source
 COPY . .

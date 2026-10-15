@@ -8,6 +8,7 @@
 const express = require('express');
 const router = express.Router();
 const { uploadAvatar, uploadPostImage } = require('../config/multer');
+const { validateRasterUpload, removeUploadedFile } = require('../utils/uploadValidation');
 const User = require('../models/User');
 const { Logger } = require('../utils/logger');
 const { isAuthenticated } = require('../middleware/auth');
@@ -58,7 +59,7 @@ const normalizeUploadPath = (filePath) => {
 };
 
 // Upload avatar
-router.post('/avatar', isAuthenticated, uploadAvatar.single('avatar'), async (req, res) => {
+router.post('/avatar', isAuthenticated, uploadAvatar.single('avatar'), validateRasterUpload, async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ message: 'No file uploaded' });
@@ -83,13 +84,14 @@ router.post('/avatar', isAuthenticated, uploadAvatar.single('avatar'), async (re
       avatarUrl 
     });
   } catch (error) {
+    await removeUploadedFile(req);
     Logger.error('Avatar upload failed', { error: error.message });
     res.status(500).json({ message: 'Failed to upload avatar' });
   }
 });
 
 // Upload post image
-router.post('/post-image', isAuthenticated, uploadPostImage.single('image'), async (req, res) => {
+router.post('/post-image', isAuthenticated, uploadPostImage.single('image'), validateRasterUpload, async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ message: 'No file uploaded' });

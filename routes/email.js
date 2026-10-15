@@ -10,8 +10,9 @@
 const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
-const bcrypt = require('bcrypt');
+const bcrypt = require('bcryptjs');
 const User = require('../models/User');
+const { establishSession } = require('../middleware/sessionIdentity');
 const { sendVerificationEmail, sendPasswordResetEmail } = require('../utils/email');
 const { Logger } = require('../utils/logger');
 const { body, validationResult } = require('express-validator');
@@ -54,28 +55,24 @@ router.get('/verify/:token', async (req, res) => {
   try {
     const nowDate = new Date();
     const nowMs = Date.now();
-    const user = await User.findOne({
+    const user = await User.findOneAndUpdate({
       emailVerificationToken: req.params.token,
       $or: [
         { emailVerificationExpires: { $gt: nowDate } },
         { emailVerificationExpires: { $type: 'number', $gt: nowMs } }
       ]
-    });
+    }, { $set: { isEmailVerified: true }, $unset: { emailVerificationToken: '', emailVerificationExpires: '' } }, { new: true, runValidators: true });
 
     if (!user) {
       return res.status(400).json({ message: 'Invalid or expired verification token' });
     }
 
-    user.isEmailVerified = true;
-    user.emailVerificationToken = undefined;
-    user.emailVerificationExpires = undefined;
-    await user.save();
+    // The atomic predicate/update consumes this capability exactly once.
 
     Logger.info('Email verified successfully', { userId: user._id });
     
-    // Auto-login the user
-    req.session.userId = user._id;
-    req.session.username = user.username;
+    // Rotate the session when verification authenticates the account.
+    await establishSession(req, user);
 
     res.json({ 
       message: 'Email verified successfully!',
@@ -97,7 +94,7 @@ router.post('/forgot-password', [
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+      return res.status(400).json({ errors: errors.array().map(({ path, msg }) => ({ path, msg })) });
     }
 
     const user = await User.findOne({ email: req.body.email });
@@ -127,7 +124,9 @@ router.post('/forgot-password', [
 // Reset password with token
 router.post('/reset-password/:token', [
   body('password')
-    .isLength({ min: 8 })
+    .isString().bail()
+    .custom(value => Buffer.byteLength(value, 'utf8') <= 72).withMessage('Password must not exceed 72 UTF-8 bytes')
+    .isLength({ min: 8, max: 128 })
     .withMessage('Password must be at least 8 characters')
     .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
     .withMessage('Password must contain uppercase, lowercase, and number')
@@ -135,30 +134,27 @@ router.post('/reset-password/:token', [
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+      return res.status(400).json({ errors: errors.array().map(({ path, msg }) => ({ path, msg })) });
     }
 
     const nowDate = new Date();
     const nowMs = Date.now();
-    const user = await User.findOne({
+    const hashedPassword = await bcrypt.hash(req.body.password, 10);
+    const user = await User.findOneAndUpdate({
       passwordResetToken: req.params.token,
       $or: [
         { passwordResetExpires: { $gt: nowDate } },
         { passwordResetExpires: { $type: 'number', $gt: nowMs } }
       ]
-    });
+    }, { $set: { password: hashedPassword }, $inc: { sessionVersion: 1 }, $unset: { passwordResetToken: '', passwordResetExpires: '' } }, { new: true, runValidators: true });
 
     if (!user) {
       return res.status(400).json({ message: 'Invalid or expired reset token' });
     }
 
-    // Hash new password
-    const hashedPassword = await bcrypt.hash(req.body.password, 10);
-    user.password = hashedPassword;
-    user.passwordResetToken = undefined;
-    user.passwordResetExpires = undefined;
-    await user.save();
+    // The atomic predicate/update consumes this capability exactly once.
 
+    global.wsManager?.disconnectUser?.(user._id.toString());
     Logger.info('Password reset successful', { userId: user._id });
     res.json({ message: 'Password reset successfully' });
   } catch (error) {
